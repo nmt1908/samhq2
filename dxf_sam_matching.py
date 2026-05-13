@@ -1231,31 +1231,46 @@ class DXFtoSAMPipelineUI:
                             best_warped = curr_warped
                             
             # =================================================================
-            # 🛠️ ENGINE 3: SIÊU TỰ ĐỘNG TÍNH LẠI (RE-CALCULATE) PADDING 10PX! 🛠️
+            # 📸 GIAI ĐOẠN 2.5: HIỂN THỊ KẾT QUẢ BẢN SAU AUTO ĐẦU TIÊN (MÀU CYAN) 📸
             # =================================================================
-            # Thay vì bắt Đại ca kéo chuột, cỗ máy tự lấy hộp logo vừa tìm được,
-            # nới rộng đều ra 10px mỗi phía và bắn AI vét sạch nấc cuối cùng!
+            if best_iou > 0.0 and best_box is not None:
+                # BÀN GIAO TỨC THỜI ĐỂ MÀN HÌNH HIỂN THỊ BẢN CYAN ĐẦU TIÊN!
+                self.root.after(0, lambda: self.finalize_auto_scan_results(
+                    best_iou, best_hu, best_warped, best_mask, best_box, is_final_refined=False
+                ))
+                
+                # TẠM DỪNG 1.5 GIÂY (CINEMATIC PAUSE) CHO ĐẠI CA NGẮM BẢN SAU AUTO!
+                import time
+                time.sleep(1.5)
+            else:
+                self.root.after(0, lambda: self.set_status("❌ Không tìm thấy cấu trúc Logo Nike.", "#ff5252"))
+                return
+                
+            # =================================================================
+            # 🛠️ ENGINE 3: SIÊU TỰ ĐỘNG TÍNH LẠI (RE-CALCULATE) PADDING ĐỦ 30PX! 🛠️
+            # =================================================================
+            # Cực kỳ hoành tráng: Lấy hộp logo Cyan vừa vẽ xong, nới rộng đều ra đúng 30px
+            # mỗi biên và chạy cỗ máy SAM2 vét sạch nấc biên cực chi tiết!
             if best_iou > 0.20 and best_mask is not None:
-                self.root.after(0, lambda: self.set_status(f"🔄 Đang tự động RE-CALCULATE (Padding 10px mỗi bên)...", "#ff007f"))
+                self.root.after(0, lambda: self.set_status(f"🔄 Đang SIÊU TÁI TÍNH TOÁN (BBox nới rộng 30px mỗi bên)...", "#ff007f"))
                 
                 cnt = ShapeMatcher.get_normalized_contour(best_mask)
                 if cnt is not None:
                     rx, ry, rw, rh = cv2.boundingRect(cnt)
                     
-                    # Padding chuẩn 10 pixel mỗi bên theo lệnh chỉ thị!
+                    # NỚI RỘNG CHÍNH XÁC 30 PIXEL MỖI BÊN THEO LỆNH ĐẠI CA!
                     tight_box = (
-                        max(0, rx - 10),
-                        max(0, ry - 10),
-                        min(w_img, rx + rw + 10),
-                        min(h_img, ry + rh + 10)
+                        max(0, rx - 30),
+                        max(0, ry - 30),
+                        min(w_img, rx + rw + 30),
+                        min(h_img, ry + rh + 30)
                     )
                     
-                    # Tính toán quét sạch lần cuối trên BBox mồi siêu khít này!
+                    # Thực thi AI quét cạn lần cuối trên vùng đất mới nới rộng 30px!
                     refined_masks = self.sam_wrapper.segment_box(img, tight_box)
                     if refined_masks:
                         for ref_m in refined_masks:
                             r_iou, r_hu, r_warped = ShapeMatcher.align_and_compute_iou(self.dxf_solid_mask, ref_m)
-                            # Nếu bản tái quét có điểm số vượt mong đợi thì ghi nhận làm Quán Quân!
                             if r_iou > best_iou or (r_iou > 0.85):
                                 best_iou = r_iou
                                 best_hu = r_hu
@@ -1263,18 +1278,15 @@ class DXFtoSAMPipelineUI:
                                 best_box = tight_box
                                 best_warped = r_warped
 
-            # BÀN GIAO KẾT QUẢ VÀ TÔ MÀU HỒNG CHIẾN THẮNG LÊN MÀN HÌNH 💖
-            if best_iou > 0.0 and best_box is not None:
+                # BÀN GIAO KẾT QUẢ CUỐI CÙNG VÀ TÔ MÀU HỒNG CHIẾN THẮNG LÊN MÀN HÌNH 💖
                 self.root.after(0, lambda: self.finalize_auto_scan_results(
                     best_iou, best_hu, best_warped, best_mask, best_box, is_final_refined=True
                 ))
-            else:
-                self.root.after(0, lambda: self.set_status("❌ Không tìm thấy cấu trúc Logo Nike.", "#ff5252"))
                 
         except Exception as err:
             print(traceback.format_exc())
             self.root.after(0, lambda: self.set_status("❌ Gặp sự cố khi phân tích ảnh tự động.", "#ff5252"))
-            
+
     def finalize_auto_scan_results(self, iou, hu, warped, mask, box, is_final_refined=False):
         """Safely redraws UI widgets to show automated scanner final winner."""
         xmin, ymin, xmax, ymax = box
@@ -1551,7 +1563,7 @@ def _silent_git_auto_push():
         subprocess.run("git add .", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         # 4. Tự động đóng dấu phiên bản đầy đủ tính năng siêu cấp mới nhất!
-        subprocess.run('git commit -m "feat: Dual-Engine SAM2 + Sieu Tai Tinh Toan Pink Pass (Padding 10px) + Overlays + Warnings Silenced ✨"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run('git commit -m "feat: Dual-Engine SAM2 + Sieu Tai Tinh Toan Pink Pass (Padding 30px) + Overlays + Warnings Silenced ✨"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         # 5. Ép nhánh chính về main và CƯỠNG CHẾ ĐẨY LÊN MÂY NGAY LẬP TỨC!
         subprocess.run("git branch -M main", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
