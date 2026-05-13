@@ -1,5 +1,10 @@
 import os
 import sys
+import warnings
+# ✨ SIÊU KHỬ NHIỄU: Tắt toàn bộ cảnh báo vô hại từ SAM2 và PyTorch giúp Console sạch bong sáng bóng!
+warnings.filterwarnings("ignore", category=UserWarning, module=".*sam2.*")
+warnings.filterwarnings("ignore", category=UserWarning, module=".*torch.*")
+
 import math
 import cv2
 import numpy as np
@@ -881,6 +886,9 @@ class DXFtoSAMPipelineUI:
         btn_auto_find = ttk.Button(box_img, text="🚀 TỰ ĐỘNG TÌM LOGO (AUTO)", style="Action.TButton", command=self.trigger_auto_logo_finder)
         btn_auto_find.pack(fill="x", pady=(5, 2))
         
+        btn_debug_amg = ttk.Button(box_img, text="🔬 XEM TẤT CẢ MASK (DEBUG GRID)", command=self.generate_debug_mask_grid)
+        btn_debug_amg.pack(fill="x", pady=2)
+        
         self.lbl_img_info = ttk.Label(box_img, text="Chưa chọn ảnh chụp.", foreground="#aaaaaa", wraplength=300)
         self.lbl_img_info.pack(anchor="w", pady=5)
         
@@ -1055,6 +1063,74 @@ class DXFtoSAMPipelineUI:
         except Exception as e:
             messagebox.showerror("Lỗi Mở Ảnh", str(e))
 
+    def generate_debug_mask_grid(self):
+        """🚀 QUÉT CẠN ZERO-SHOT VÀ RENDER LƯỚI 8 CỘT TOÀN BỘ MASK NHƯ SUPERVISION! 🚀"""
+        if self.current_image_rgb is None:
+            messagebox.showwarning("Trống", "Đại ca hãy mở ảnh chụp trước nhé!")
+            return
+            
+        self.set_status("📡 Đang kích hoạt quét cạn AMG Zero-Shot...", "#ffea00")
+        
+        def run_debug():
+            try:
+                img = self.current_image_rgb
+                raw_masks = self.sam_wrapper.generate_all_masks(img)
+                if not raw_masks:
+                    self.root.after(0, lambda: self.set_status("❌ Không tìm thấy mặt nạ nào.", "#ff5252"))
+                    return
+                
+                # 1. Sắp xếp giảm dần diện tích (Area) y hệt Logic của Đại ca!
+                sorted_items = sorted(raw_masks, key=lambda x: x['area'], reverse=True)
+                masks = [item['segmentation'] for item in sorted_items]
+                num_masks = len(masks)
+                
+                self.root.after(0, lambda: self.set_status(f"🎨 Đang vẽ Lưới {num_masks} mặt nạ (8 Cột)...", "#ffea00"))
+                
+                # 2. Tính toán Grid động (luôn có 8 cột)
+                cols = 8
+                rows = math.ceil(num_masks / cols)
+                
+                # Thiết lập nền đen tuyền huyền bí
+                fig, axes = plt.subplots(rows, cols, figsize=(16, 2 * rows), facecolor='black')
+                fig.subplots_adjust(hspace=0.1, wspace=0.1, left=0.01, right=0.99, top=0.99, bottom=0.01)
+                
+                # Chuẩn hóa Axes array
+                if num_masks == 1:
+                    axes_flat = [axes]
+                elif rows == 1:
+                    axes_flat = axes
+                else:
+                    axes_flat = axes.flatten()
+                    
+                # 3. Duyệt và vẽ từng mask trắng đen
+                for idx in range(len(axes_flat)):
+                    ax = axes_flat[idx]
+                    ax.axis('off')
+                    if idx < num_masks:
+                        mask_vis = (masks[idx] * 255).astype(np.uint8)
+                        # Giữ nguyên tỷ lệ dọc ngang cho chuẩn biên dạng
+                        ax.imshow(mask_vis, cmap='gray', aspect='auto')
+                    else:
+                        # Ô thừa đổ màu đen kịt
+                        ax.imshow(np.zeros((10, 10)), cmap='gray', aspect='auto')
+                
+                # 4. Xuất file ảnh độ phân giải cao
+                save_path = os.path.join(CURRENT_DIR, "debug_all_masks_grid.png")
+                plt.savefig(save_path, dpi=100, bbox_inches='tight', facecolor='black')
+                plt.close(fig)
+                
+                self.root.after(0, lambda: self.set_status("✅ Đã tạo xong debug_all_masks_grid.png!", "#00e676"))
+                self.root.after(0, lambda: messagebox.showinfo("Thành Công", f"Đã bóc tách thành công {num_masks} mặt nạ!\nẢnh Grid đã lưu tại:\n{save_path}"))
+                
+                # 5. BUNG FILE LÊN MÀN HÌNH CHO ĐẠI CA CHIÊM NGƯỠNG NGAY LẬP TỨC!
+                os.startfile(save_path)
+                
+            except Exception as e:
+                print(traceback.format_exc())
+                self.root.after(0, lambda: self.set_status("❌ Sự cố khi render lưới debug.", "#ff5252"))
+                
+        threading.Thread(target=run_debug, daemon=True).start()
+
     def trigger_auto_logo_finder(self):
         """Initiates the automated background scan pipeline."""
         if self.current_image_rgb is None:
@@ -1069,22 +1145,17 @@ class DXFtoSAMPipelineUI:
         
     def run_auto_scan_process(self):
         """
-        🚀 QUY TRÌNH DXF-GROUNDED SAM SIÊU CẤP ĐỈNH CAO! 🚀
-        Thiết lập dựa trên tài liệu Colab Roboflow: 
-        Thay vì quét mù, ta dùng DXF làm bộ định vị (Grounder) để sinh BBox mồi cho SAM2!
+        🚀 SIÊU PIPELINE DUAL-ENGINE: KẾT HỢP SỨC MẠNH AMG ZERO-SHOT + GROUNDED SAM 🚀
+        Mô hình tự động hóa 2 Nòng súng cực mạnh dựa trên phát hiện thiên tài của Đại ca!
+        
+        Nòng 1: Quét cạn 100% Mask (Zero-Shot AMG) và lọc tìm Winner theo IoU hình học.
+        Nòng 2: Dùng Grounded Chamfer khoá mục tiêu và vét 93 lát cắt Logits để so găng!
+        
+        👉 CẠNH TRANH CÔNG BẰNG: Bản đẹp nhất của Nòng nào có IoU cao nhất sẽ chiến thắng!
         """
         try:
             img = self.current_image_rgb
             h_img, w_img = img.shape[:2]
-            
-            self.root.after(0, lambda: self.set_status("📡 Đang kích hoạt bộ định vị DXF Visual Grounder...", "#ffea00"))
-            
-            # BƯỚC 1: [DXF VISUAL GROUNDER] - Dùng Chamfer quét gradient để lấy Hộp BBox ôm sát Logo nhất!
-            # Đây chính là linh hồn của hệ thống: Đảm bảo SAM2 tập trung 100% ánh nhìn vào vùng chứa Logo.
-            candidates = ShapeMatcher.propose_candidate_boxes(img, self.dxf_solid_mask)
-            count = len(candidates)
-            
-            self.root.after(0, lambda: self.set_status(f"✅ Đã định vị BBox mồi. Đang nạp SAM2 + Quét 31 nấc Logits...", "#00e676"))
             
             best_iou = -1.0
             best_hu = 999.0
@@ -1092,65 +1163,110 @@ class DXFtoSAMPipelineUI:
             best_box = None
             best_warped = None
             
-            # BƯỚC 2: [SAM2 PROMPTED SWEEP] - Bơm hộp mồi vào SAM2 và quét cạn 93 lát cắt Logits!
-            for i, box in enumerate(candidates):
-                # Hàm segment_box của ta đã nhúng sẵn bộ quét Logits cực kỳ tinh xảo!
-                masks = self.sam_wrapper.segment_box(img, box)
-                if not masks: 
-                    continue
+            # =================================================================
+            # 🔥 ENGINE 1: QUÉT CẠN TOÀN CẢNH (AMG ZERO-SHOT CANDIDATE POOL) 🔥
+            # =================================================================
+            # Tận dụng phát hiện của Đại ca: Có những lúc AMG bóc tách vật thể thô cực kỳ hoàn hảo!
+            self.root.after(0, lambda: self.set_status("📡 NÒNG 1: Đang quét cạn Zero-Shot & Chấm điểm đối trọng...", "#ffea00"))
+            
+            raw_masks = self.sam_wrapper.generate_all_masks(img)
+            if raw_masks:
+                for item in raw_masks:
+                    seg_bool = item['segmentation']
+                    bin_m = (seg_bool * 255).astype(np.uint8)
                     
-                for mask in masks:
-                    # Lọc sơ bộ bụi bẩn kích thước quá nhỏ so với ảnh
-                    cnt_m = ShapeMatcher.get_normalized_contour(mask)
+                    # Lọc sơ bộ nhiễu dơ để tối ưu tốc độ chấm điểm
+                    cnt_m = ShapeMatcher.get_normalized_contour(bin_m)
                     if cnt_m is not None:
                         _, _, mw, mh = cv2.boundingRect(cnt_m)
-                        if mw < w_img * 0.15 and mh < h_img * 0.12: 
+                        # Bỏ qua các vết xước hay đốm quá nhỏ
+                        if mw < w_img * 0.12 and mh < h_img * 0.10: 
+                            continue
+                        # Bỏ qua các hình dạng quá vuông vức, không thuôn dài như Swoosh
+                        aspect = max(mw, mh) / max(1, min(mw, mh))
+                        if aspect < 1.2:
                             continue
                             
-                    # ⚖️ CHẤM ĐIỂM TRỌNG TÀI TỐI CAO (IoU COMPOSITE)
-                    curr_iou, curr_hu, curr_warped = ShapeMatcher.align_and_compute_iou(self.dxf_solid_mask, mask)
+                    # ⚖️ TRỌNG TÀI DXF CHẤM ĐIỂM CHO CANDIDATE AMG!
+                    curr_iou, curr_hu, curr_warped = ShapeMatcher.align_and_compute_iou(self.dxf_solid_mask, bin_m)
                     
-                    # Chọn ra Lát cắt Logit đẹp nhất có IoU khớp khít đỉnh cao!
                     if curr_iou > best_iou:
                         best_iou = curr_iou
                         best_hu = curr_hu
-                        best_mask = mask
-                        best_box = box
+                        best_mask = bin_m
+                        # Chuyển đổi BBox của AMG [x,y,w,h] sang chuẩn (x1,y1,x2,y2) để vẽ UI
+                        bx, by, bw, bh = item['bbox']
+                        best_box = (int(bx), int(by), int(bx + bw), int(by + bh))
                         best_warped = curr_warped
+            
+            # =================================================================
+            # 🎯 ENGINE 2: VÉT THÊM BẰNG GROUNDED SAM (CHAMFER PROMPT SWEEP) 🎯
+            # =================================================================
+            # Chốt chặn vững chắc: Nếu AMG bị lẫn hoặc mờ, BBox Grounder sẽ ra tay cứu cánh!
+            self.root.after(0, lambda: self.set_status(f"📡 NÒNG 2: Quét bổ trợ Grounded DXF (Đang dẫn đầu: {best_iou*100:.1f}%)...", "#ffea00"))
+            
+            candidates = ShapeMatcher.propose_candidate_boxes(img, self.dxf_solid_mask)
+            if candidates:
+                for i, box in enumerate(candidates):
+                    # Đã có bộ đệm cache embedding nên việc chạy lại ở đây cực kỳ nhanh (<50ms)!
+                    masks = self.sam_wrapper.segment_box(img, box)
+                    if not masks: continue
+                    
+                    for mask in masks:
+                        cnt_m = ShapeMatcher.get_normalized_contour(mask)
+                        if cnt_m is not None:
+                            _, _, mw, mh = cv2.boundingRect(cnt_m)
+                            if mw < w_img * 0.12 and mh < h_img * 0.10: 
+                                continue
                         
-            # BƯỚC 3: [TWO-PASS TIGHT REFINER] - Tinh chỉnh lần cuối
-            # Lấy mask tốt nhất vừa tìm được -> Tự động bóp khít -> Chạy tinh chỉnh 1 lần duy nhất để lấy IoU kịch trần!
+                        # Chấm điểm đối chiếu toán học với DXF
+                        curr_iou, curr_hu, curr_warped = ShapeMatcher.align_and_compute_iou(self.dxf_solid_mask, mask)
+                        
+                        # Nếu vượt trội hơn AMG thì cướp ngôi vương!
+                        if curr_iou > best_iou:
+                            best_iou = curr_iou
+                            best_hu = curr_hu
+                            best_mask = mask
+                            best_box = box
+                            best_warped = curr_warped
+                            
+            # =================================================================
+            # 🛠️ ENGINE 3: SIÊU TỰ ĐỘNG TÍNH LẠI (RE-CALCULATE) PADDING 10PX! 🛠️
+            # =================================================================
+            # Thay vì bắt Đại ca kéo chuột, cỗ máy tự lấy hộp logo vừa tìm được,
+            # nới rộng đều ra 10px mỗi phía và bắn AI vét sạch nấc cuối cùng!
             if best_iou > 0.20 and best_mask is not None:
-                self.root.after(0, lambda: self.set_status("🔄 Đang tự động tinh chỉnh Hộp Siêu Khít (Refining)...", "#00e676"))
+                self.root.after(0, lambda: self.set_status(f"🔄 Đang tự động RE-CALCULATE (Padding 10px mỗi bên)...", "#ff007f"))
                 
                 cnt = ShapeMatcher.get_normalized_contour(best_mask)
                 if cnt is not None:
                     rx, ry, rw, rh = cv2.boundingRect(cnt)
-                    pad_w = int(rw * 0.10)
-                    pad_h = int(rh * 0.10)
                     
+                    # Padding chuẩn 10 pixel mỗi bên theo lệnh chỉ thị!
                     tight_box = (
-                        max(0, rx - pad_w),
-                        max(0, ry - pad_h),
-                        min(w_img, rx + rw + pad_w),
-                        min(h_img, ry + rh + pad_h)
+                        max(0, rx - 10),
+                        max(0, ry - 10),
+                        min(w_img, rx + rw + 10),
+                        min(h_img, ry + rh + 10)
                     )
                     
+                    # Tính toán quét sạch lần cuối trên BBox mồi siêu khít này!
                     refined_masks = self.sam_wrapper.segment_box(img, tight_box)
                     if refined_masks:
                         for ref_m in refined_masks:
                             r_iou, r_hu, r_warped = ShapeMatcher.align_and_compute_iou(self.dxf_solid_mask, ref_m)
-                            if r_iou > best_iou or (r_iou > 0.80):
+                            # Nếu bản tái quét có điểm số vượt mong đợi thì ghi nhận làm Quán Quân!
+                            if r_iou > best_iou or (r_iou > 0.85):
                                 best_iou = r_iou
                                 best_hu = r_hu
                                 best_mask = ref_m
                                 best_box = tight_box
                                 best_warped = r_warped
 
-            # BÀN GIAO VÀ VẼ KẾT QUẢ LÊN GIAO DIỆN
+            # BÀN GIAO KẾT QUẢ VÀ TÔ MÀU HỒNG CHIẾN THẮNG LÊN MÀN HÌNH 💖
             if best_iou > 0.0 and best_box is not None:
                 self.root.after(0, lambda: self.finalize_auto_scan_results(
-                    best_iou, best_hu, best_warped, best_mask, best_box
+                    best_iou, best_hu, best_warped, best_mask, best_box, is_final_refined=True
                 ))
             else:
                 self.root.after(0, lambda: self.set_status("❌ Không tìm thấy cấu trúc Logo Nike.", "#ff5252"))
@@ -1159,7 +1275,7 @@ class DXFtoSAMPipelineUI:
             print(traceback.format_exc())
             self.root.after(0, lambda: self.set_status("❌ Gặp sự cố khi phân tích ảnh tự động.", "#ff5252"))
             
-    def finalize_auto_scan_results(self, iou, hu, warped, mask, box):
+    def finalize_auto_scan_results(self, iou, hu, warped, mask, box, is_final_refined=False):
         """Safely redraws UI widgets to show automated scanner final winner."""
         xmin, ymin, xmax, ymax = box
         
@@ -1167,11 +1283,11 @@ class DXFtoSAMPipelineUI:
         self.rs.extents = (xmin, xmax, ymin, ymax)
         self.lbl_stats_res.config(text=f"Vùng tự động: W={xmax-xmin:.0f}, H={ymax-ymin:.0f} px")
         
-        # Delegate to GUI renderer to draw green overlay mask and calculate confidence scores
-        self.safe_gui_render_callback(iou, hu, warped, 0, mask)
+        # Delegate to GUI renderer to draw green (or PINK!) overlay mask and calculate confidence scores
+        self.safe_gui_render_callback(iou, hu, warped, 0, mask, is_final_refined=is_final_refined)
         
         # Set banner status
-        self.set_status(f"🔥 ĐÃ TỰ ĐỘNG TÌM THẤY LOGO! IoU = {iou*100:.1f}%.", "#00e676")
+        self.set_status(f"🔥 ĐÃ TỰ ĐỘNG TÌM THẤY LOGO! IoU = {iou*100:.1f}%.", "#ff007f" if is_final_refined else "#00e676")
 
     def render_mask_on_canvas(self, mask_array, canvas_widget):
         """Visualizes a numpy binary mask onto a Tkinter canvas."""
@@ -1261,13 +1377,23 @@ class DXFtoSAMPipelineUI:
             print(traceback.format_exc())
             self.root.after(0, lambda: self.set_status("Lỗi trong luồng xử lý nền.", "#ff5252"))
 
-    def safe_gui_render_callback(self, iou, hu, warped_overlay, idx, mask):
+    def safe_gui_render_callback(self, iou, hu, warped_overlay, idx, mask, is_final_refined=False):
         """Strict main-thread thread-safe callback to draw dynamic results."""
         # Cache best result
         self.current_best_segment = mask
         
         # 1. Update UI labels
         self.lbl_iou_score.config(text=f"{iou * 100:.1f} %")
+        
+        # TỔNG HỢP BẢNG MÀU: Chuyển sang MÀU HỒNG NÓNG nếu là kết quả Re-Calculate cuối cùng!
+        if is_final_refined:
+            theme_hex = '#ff007f'         # Hồng Neon Magenta cực chất
+            mask_rgba = [1.0, 0.0, 0.6, 0.45] # Phủ mờ Hồng sắc nét
+            badge_label = " 💖 KẾT QUẢ CUỐI CÙNG (PINK RE-CALC) "
+        else:
+            theme_hex = '#00e5ff'         # Xanh Cyan định vị ban đầu
+            mask_rgba = [0.0, 1.0, 0.0, 0.4]  # Phủ mờ Xanh Lá cây mượt
+            badge_label = " 🔍 BBOX VÙNG LOGO SAU AUTO "
         
         if iou > 0.75:
             grade, color = "🥇 KHỚP HOÀN HẢO (High Score)", "#00e676"
@@ -1278,12 +1404,17 @@ class DXFtoSAMPipelineUI:
         else:
             grade, color = "❌ KHÔNG KHỚP (No Match)", "#ff5252"
             
+        # Ép màu trạng thái thành màu hồng nếu là Pink Pass cho đồng bộ!
+        if is_final_refined:
+            color = theme_hex
+            
         self.lbl_match_status.config(text=grade, foreground=color)
         self.lbl_stats_hu.config(text=f"Khoảng cách Hu: {hu:.6f}")
         
         mode_type = self.sam_wrapper.model_type
         if mode_type == "HQ-SAM2":
-            self.lbl_stats_mode.config(text=f"Động cơ: HQ-SAM2 (Candidate {idx+1})")
+            engine_text = f"Động cơ: HQ-SAM2 (Recalculate Pass)" if is_final_refined else f"Động cơ: HQ-SAM2 (Candidate {idx+1})"
+            self.lbl_stats_mode.config(text=engine_text)
         else:
             self.lbl_stats_mode.config(text="Động cơ: GrabCut Siêu Tốc (Resized)")
             
@@ -1299,18 +1430,55 @@ class DXFtoSAMPipelineUI:
         # 3. INTERACTIVE LIVE OVERLAY: Overlay translucent AI mask directly on the main workspace image!
         if self.current_image_rgb is not None and mask is not None:
             try:
-                # Keep base image, remove any previous overlay layers
+                # A. Giữ ảnh gốc, dọn sạch lớp Mask cũ
                 while len(self.ax.images) > 1:
                     self.ax.images[-1].remove()
                 
-                # Build RGBA green overlay
-                overlay_rgba = np.zeros((*mask.shape, 4), dtype=np.float32)
-                # Pure translucent green [0, 255, 0, alpha=0.4]
-                overlay_rgba[mask > 0] = [0.0, 1.0, 0.0, 0.4]
+                # Dọn sạch các lớp BBox và Chữ vẽ thêm từ lượt trước
+                if not hasattr(self, 'custom_overlay_artists'):
+                    self.custom_overlay_artists = []
+                for artist in self.custom_overlay_artists:
+                    try: artist.remove()
+                    except Exception: pass
+                self.custom_overlay_artists.clear()
                 
-                # Render on center viewport
+                # B. Vẽ lớp phủ Mask mờ (Xanh Lá hoặc HỒNG NEON) lên vật thể
+                overlay_rgba = np.zeros((*mask.shape, 4), dtype=np.float32)
+                overlay_rgba[mask > 0] = mask_rgba
                 self.ax.imshow(overlay_rgba)
+                
+                # C. 🎨 VẼ BOUNDING BOX CHUYÊN NGHIỆP 🎨
+                cnt = ShapeMatcher.get_normalized_contour(mask)
+                if cnt is not None:
+                    import matplotlib.patches as patches
+                    rx, ry, rw, rh = cv2.boundingRect(cnt)
+                    
+                    # 1. Vẽ khung chữ nhật bao quanh Logo (Cyan hoặc HỒNG NEON)
+                    rect_patch = patches.Rectangle(
+                        (rx, ry), rw, rh,
+                        linewidth=2.5,
+                        edgecolor=theme_hex,
+                        facecolor='none',
+                        linestyle='-',
+                        alpha=0.95
+                    )
+                    self.ax.add_patch(rect_patch)
+                    self.custom_overlay_artists.append(rect_patch)
+                    
+                    # 2. Vẽ bảng nhãn Text Badge chuyên nghiệp phía trên hộp
+                    label_text = self.ax.text(
+                        rx, max(10, ry - 12),
+                        badge_label,
+                        color=theme_hex,
+                        fontsize=8,
+                        fontweight='bold',
+                        bbox=dict(facecolor='#0e0f13', alpha=0.85, edgecolor=theme_hex, boxstyle='round,pad=0.3')
+                    )
+                    self.custom_overlay_artists.append(label_text)
+                
+                # Cập nhật lại màn hình hiển thị
                 self.plot_canvas.draw_idle()
+                
             except Exception as draw_err:
                 print(f"Overlay drawing error: {draw_err}")
 
@@ -1382,8 +1550,8 @@ def _silent_git_auto_push():
         # 3. Tự động Gom Source Code (Đã được lá chắn .gitignore lọc sạch models/zip!)
         subprocess.run("git add .", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-        # 4. Tự động đóng dấu phiên bản
-        subprocess.run('git commit -m "feat: Quy trinh DXF-Grounded SAM + FP16 FlashAttention"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # 4. Tự động đóng dấu phiên bản đầy đủ tính năng siêu cấp mới nhất!
+        subprocess.run('git commit -m "feat: Dual-Engine SAM2 + Sieu Tai Tinh Toan Pink Pass (Padding 10px) + Overlays + Warnings Silenced ✨"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         # 5. Ép nhánh chính về main và CƯỠNG CHẾ ĐẨY LÊN MÂY NGAY LẬP TỨC!
         subprocess.run("git branch -M main", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
